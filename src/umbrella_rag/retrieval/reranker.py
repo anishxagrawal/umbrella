@@ -15,7 +15,11 @@ class RerankedChunk:
     text: str
     source: str
     page: int
-    section: str | None
+    section: str
+    section_title: str
+    chunk_type: str
+    spec_number: str
+    series_id: str
     similarity: float
     rerank_score: float
 
@@ -68,7 +72,11 @@ class CrossEncoderReranker:
                 text=chunk.text,
                 source=chunk.source,
                 page=chunk.page,
-                section=chunk.section,
+                section=chunk.section or "",
+                section_title=chunk.section_title,
+                chunk_type=chunk.chunk_type,
+                spec_number=chunk.spec_number,
+                series_id=chunk.series_id,
                 similarity=chunk.similarity,
                 rerank_score=float(score),
             )

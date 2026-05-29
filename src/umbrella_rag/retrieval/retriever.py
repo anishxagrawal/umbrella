@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 from ..config import Settings, load_settings
 from ..db.pgvector_client import PgVectorClient, PgVectorPool
 from ..embeddings.encoder import EmbeddingProvider, SentenceTransformerEmbeddingProvider
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -13,8 +17,13 @@ class RetrievedChunk:
     text: str
     source: str
     page: int
-    section: str | None
+    section: str
+    section_title: str
+    chunk_type: str
+    spec_number: str
+    series_id: str
     similarity: float
+    rerank_score: float | None = None
 
 
 class Retriever:
@@ -43,17 +52,24 @@ class Retriever:
         if not rows:
             return []
 
-        return [
+        results = [
             RetrievedChunk(
                 id=row["id"],
-                text=row["text"],
-                source=row["source"],
-                page=row["page"],
-                section=row["section"],
-                similarity=row["similarity"],
+                text=row.get("text", ""),
+                source=row.get("source", ""),
+                page=row.get("page", 0) or 0,
+                section=row.get("section", "") or "",
+                section_title=row.get("section_title", "") or "",
+                chunk_type=row.get("chunk_type", "") or "",
+                spec_number=row.get("spec_number", "") or "",
+                series_id=row.get("series_id", "") or "",
+                similarity=float(row.get("similarity", 0.0) or 0.0),
+                rerank_score=None,
             )
             for row in rows
         ]
+        logger.debug("Retrieved %s chunks for query: %s", len(results), query)
+        return results
 
     def close(self) -> None:
         if self._pool is not None:
