@@ -452,7 +452,6 @@ def _first_n_words(text: str, count: int) -> str:
     return " ".join(words[:count])
 
 
-
 def generate_summary_chunks(
     sections_with_hierarchy: list[dict[str, Any]],
     spec_meta: dict[str, str],
@@ -464,17 +463,13 @@ def generate_summary_chunks(
     Args:
         sections_with_hierarchy: Output of infer_hierarchy().
         spec_meta: Dict with spec_number and series_id.
-        summary_words_per_child: Number of words to take from each child snippet.
+        summary_words_per_child: Number of words to take from each child.
 
     Returns:
         List of summary chunk dicts.
 
     Notes:
-        - Skips children with fewer than SUMMARY_MIN_CHILD_WORDS words to avoid
-          embedding table-row fragments (e.g. 25-char IE name entries).
-        - Hard caps summary text at SUMMARY_MAX_CHARS characters to prevent
-          explosion when a section has hundreds of descendants.
-        - Summary chunks are additional and do not replace leaf chunks.
+        Summary chunks are additional and do not replace leaf chunks.
     """
     children_by_parent: dict[str, list[dict[str, Any]]] = {}
     for section in sections_with_hierarchy:
@@ -483,7 +478,6 @@ def generate_summary_chunks(
             children_by_parent.setdefault(parent_key, []).append(section)
 
     summary_chunks: list[dict[str, Any]] = []
-
     for section in sections_with_hierarchy:
         section_number = section.get("section_number", "")
         if section_number not in children_by_parent:
@@ -494,53 +488,23 @@ def generate_summary_chunks(
 
         label = section_number or "Document"
         title = section.get("section_title", "")
-        header = f"Section {label} - {title} covers: "
-
         summary_parts: list[str] = []
-        total_chars = len(header)
-        skipped = 0
-
         for child in children:
-            child_text = child.get("text", "")
-            child_words = child_text.split()
-
-            if len(child_words) < SUMMARY_MIN_CHILD_WORDS:
-                skipped += 1
-                continue
-
             child_number = child.get("section_number", "")
-            snippet = " ".join(child_words[:summary_words_per_child])
-            entry = f"{child_number}: {snippet}".strip()
+            snippet = _first_n_words(child.get("text", ""), summary_words_per_child)
+            summary_parts.append(f"{child_number}: {snippet}".strip())
 
-            if total_chars + len(entry) + 3 > SUMMARY_MAX_CHARS:
-                summary_parts.append(
-                    f"[{len(children) - len(summary_parts) - skipped} further subsections omitted]"
-                )
-                break
-
-            summary_parts.append(entry)
-            total_chars += len(entry) + 3
-
-        if skipped > 0:
-            logger.debug(
-                "Section %s summary: skipped %s short children (table rows)",
-                section_number,
-                skipped,
-            )
-
-        if not summary_parts:
-            summary_text = (
-                f"Section {label} - {title}. "
-                f"Contains {len(children)} subsections (table or parameter data)."
-            )
-        else:
-            summary_text = header + " | ".join(summary_parts)
+        summary_text = f"Section {label} - {title} covers: " + " | ".join(summary_parts)
 
         first_child_page = int(children[0].get("page", 0))
         summary_chunks.append(
             _build_chunk(
-                text=summary_text,
-                source=section.get("source", ""),
+                Notes:
+                    - Skips children with fewer than SUMMARY_MIN_CHILD_WORDS words to avoid
+                      embedding table-row fragments (e.g. 25-char IE name entries).
+                    - Hard caps summary text at SUMMARY_MAX_CHARS characters to prevent
+                      explosion when a section has hundreds of descendants (e.g. NGAP IE tables).
+                    - Summary chunks are additional and do not replace leaf chunks.
                 page=first_child_page,
                 section=section_number,
                 section_title=title,
@@ -549,45 +513,79 @@ def generate_summary_chunks(
                 total_chunks=1,
                 is_summary=True,
                 depth=section.get("depth", 0),
-                chapter=section.get("chapter", ""),
-                parent_section=section.get("parent_section", ""),
-                grandparent_section=section.get("grandparent_section", ""),
-                spec_number=spec_meta.get("spec_number", ""),
-                series_id=spec_meta.get("series_id", ""),
-            )
-        )
 
-    logger.debug("Generated %s summary chunks", len(summary_chunks))
-    return summary_chunks
+                for section in sections_with_hierarchy:
+                    section_number = section.get("section_number", "")
+                    if section_number not in children_by_parent:
+                        continue
+                    children = children_by_parent[section_number]
+                    if not children:
+                        continue
 
+                    label = section_number or "Document"
+                    title = section.get("section_title", "")
+                    header = f"Section {label} - {title} covers: "
 
-def chunk_document(
-    pages: list[dict[str, Any]],
-    chunk_size: int,
-    overlap: int,
-    min_remaining_words: int,
-) -> list[dict[str, Any]]:
-    """
-    Main entry point for hierarchical chunking of a 3GPP document.
+                    summary_parts: list[str] = []
+                    total_chars = len(header)
+                    skipped = 0
 
-    Args:
-        pages: List of page dicts from parser.py.
-        chunk_size: Maximum words per leaf chunk.
-        overlap: Word overlap for sliding window fallback.
-        min_remaining_words: Minimum words to create a trailing chunk.
+                    for child in children:
+                        child_text = child.get("text", "")
+                        child_words = child_text.split()
 
-    Returns:
-        List of chunk dicts with required schema.
+                        if len(child_words) < SUMMARY_MIN_CHILD_WORDS:
+                            skipped += 1
+                            continue
 
-    Raises:
-        ValueError: If chunk_size <= 0, overlap is invalid, or pages is empty.
+                        child_number = child.get("section_number", "")
+                        snippet = " ".join(child_words[:summary_words_per_child])
+                        entry = f"{child_number}: {snippet}".strip()
 
-    Notes:
-        Stateless and thread-safe for concurrent container use.
-    """
-    if chunk_size <= 0:
-        raise ValueError("chunk_size must be positive.")
-    if overlap < 0 or overlap >= chunk_size:
+                        if total_chars + len(entry) + 3 > SUMMARY_MAX_CHARS:
+                            summary_parts.append(
+                                f"[{len(children) - len(summary_parts) - skipped} further subsections omitted]"
+                            )
+                            break
+
+                        summary_parts.append(entry)
+                        total_chars += len(entry) + 3
+
+                    if skipped > 0:
+                        logger.debug(
+                            "Section %s summary: skipped %s short children (table rows)",
+                            section_number,
+                            skipped,
+                        )
+
+                    if not summary_parts:
+                        summary_text = (
+                            f"Section {label} - {title}. "
+                            f"Contains {len(children)} subsections (table or parameter data)."
+                        )
+                    else:
+                        summary_text = header + " | ".join(summary_parts)
+
+                    first_child_page = int(children[0].get("page", 0))
+                    summary_chunks.append(
+                        _build_chunk(
+                            text=summary_text,
+                            source=section.get("source", ""),
+                            page=first_child_page,
+                            section=section_number,
+                            section_title=title,
+                            chunk_type="summary",
+                            chunk_index=0,
+                            total_chunks=1,
+                            is_summary=True,
+                            depth=section.get("depth", 0),
+                            chapter=section.get("chapter", ""),
+                            parent_section=section.get("parent_section", ""),
+                            grandparent_section=section.get("grandparent_section", ""),
+                            spec_number=spec_meta.get("spec_number", ""),
+                            series_id=spec_meta.get("series_id", ""),
+                        )
+                    )
         raise ValueError("overlap must be between 0 and chunk_size - 1.")
     if not pages:
         raise ValueError("pages must not be empty.")
