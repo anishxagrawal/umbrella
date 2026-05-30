@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any, Callable
 
+from ..retrieval.classifier import classify_query
 from ..retrieval.expander import expand_query
 
 
@@ -116,7 +117,21 @@ class RCAOrchestrator:
         start_time = time.perf_counter()
         try:
             expanded_query = self._expander_fn(query)
-            retrieved_chunks = self._retriever.retrieve(expanded_query)
+
+            source_filter = classify_query(expanded_query)
+
+            retrieved_chunks = self._retriever.retrieve(
+                expanded_query,
+                source_filter=source_filter,
+            )
+
+            if not retrieved_chunks and source_filter is not None:
+                logger.warning(
+                    "Source filter %s returned 0 chunks - falling back to full search",
+                    source_filter,
+                )
+                retrieved_chunks = self._retriever.retrieve(expanded_query)
+
             reranked_chunks = self._reranker.rerank(expanded_query, retrieved_chunks)
             generator_response = self._generator.generate(expanded_query, reranked_chunks)
         except Exception as exc:
@@ -129,9 +144,11 @@ class RCAOrchestrator:
         model = getattr(generator_response, "model", "")
 
         logger.info(
-            "RCA pipeline: query=%s expanded=%s retrieved=%s reranked=%s latency=%.0fms",
+            "RCA pipeline: query=%s expanded=%s source_filter=%s "
+            "retrieved=%s reranked=%s latency=%.0fms",
             query,
             expanded_query,
+            source_filter,
             len(retrieved_chunks),
             len(reranked_chunks),
             latency_ms,

@@ -97,13 +97,19 @@ class PgVectorClient:
         self._pool = pool
         self._table_name = table_name
 
-    def search(self, query_vector: list[float], top_k: int) -> list[dict]:
+    def search(
+        self,
+        query_vector: list[float],
+        top_k: int,
+        source_filter: list[str] | None = None,
+    ) -> list[dict]:
         """
         Run a vector similarity search without filters.
 
         Args:
             query_vector: Embedding vector to search against.
             top_k: Maximum number of results to return.
+            source_filter: Optional list of source filenames to filter on.
 
         Returns:
             List of result dicts with chunk metadata and similarity.
@@ -111,22 +117,33 @@ class PgVectorClient:
         Notes:
             Uses parameterized queries only.
         """
-        query = sql.SQL(
+        base_query = sql.SQL(
             """
             SELECT id, text, source, page, section,
                    section_title, chunk_type, chunk_index, total_chunks,
                    is_summary, depth, chapter, parent_section,
                    grandparent_section, spec_number, series_id,
-                     1 - (embedding <=> %s::vector) AS similarity
+                   1 - (embedding <=> %s::vector) AS similarity
             FROM {table}
-                 ORDER BY embedding <=> %s::vector
-            LIMIT %s
             """
         ).format(table=sql.Identifier(self._table_name))
 
+        where_clauses: list[sql.SQL] = []
+        params: list[Any] = [query_vector]
+
+        if source_filter:
+            where_clauses.append(sql.SQL("source = ANY(%s)"))
+            params.append(source_filter)
+
+        if where_clauses:
+            base_query += sql.SQL(" WHERE ") + sql.SQL(" AND ").join(where_clauses)
+
+        query = base_query + sql.SQL(" ORDER BY embedding <=> %s::vector LIMIT %s")
+        params.extend([query_vector, top_k])
+
         with self._pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (query_vector, query_vector, top_k))
+                cur.execute(query, params)
                 rows = cur.fetchall()
 
         return [

@@ -39,7 +39,12 @@ class Retriever:
         self._top_k_default = top_k_default
         self._pool = pool
 
-    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int | None = None,
+        source_filter: list[str] | None = None,
+    ) -> list[RetrievedChunk]:
         if not query or not query.strip():
             raise ValueError("Query must be a non-empty string.")
 
@@ -48,7 +53,7 @@ class Retriever:
             raise ValueError("top_k must be a positive integer.")
 
         query_vector = self._embedder.embed_query(query)
-        rows = self._db_client.search(query_vector, limit)
+        rows = self._db_client.search(query_vector, limit, source_filter=source_filter)
         if not rows:
             return []
 
@@ -68,7 +73,12 @@ class Retriever:
             )
             for row in rows
         ]
-        logger.debug("Retrieved %s chunks for query: %s", len(results), query)
+        logger.debug(
+            "Retrieved %s chunks for query=%r source_filter=%s",
+            len(results),
+            query,
+            source_filter,
+        )
         return results
 
     def close(self) -> None:
