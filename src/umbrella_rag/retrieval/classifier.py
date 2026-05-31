@@ -84,8 +84,13 @@ _ROUTING_TABLE: list[tuple[tuple[str, ...], list[str]]] = [
             "cell reselection",
             "serving cell",
             "reference signal received",
+            "measurement threshold",
+            "handover threshold",
+            "a3 offset",
+            "hysteresis",
+            "time to trigger",
         ),
-        ["38133-i90.pdf", "38104-j40.pdf"],
+        ["38133-i90.pdf"],
     ),
     (
         (

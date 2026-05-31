@@ -711,3 +711,82 @@ def chunk_pages(
         This signature is stable for pipeline.py compatibility.
     """
     return chunk_document(pages, chunk_size, overlap, min_remaining_words)
+
+
+FLAT_TABLE_SOURCES: frozenset[str] = frozenset({"38133-i90.pdf"})
+
+
+def chunk_as_flat_tables(
+    pages: list[dict[str, Any]],
+    chunk_size: int = 200,
+    overlap: int = 40,
+    min_remaining: int = 50,
+) -> list[dict[str, Any]]:
+    """
+    Flat sliding-window chunker for table-heavy specs with no prose section structure.
+
+    Args:
+        pages: List of page dicts from parser.py.
+        chunk_size: Maximum words per chunk.
+        overlap: Word overlap between chunks.
+        min_remaining: Minimum words to emit a trailing chunk.
+
+    Returns:
+        List of chunk dicts with required schema.
+
+    Notes:
+        Skips section detection entirely. Used for TS 38.133 which consists
+        almost entirely of parameter tables whose row headers are mistakenly
+        detected as section titles by the standard regex.
+    """
+    source = pages[0].get("source", "")
+    spec_meta = extract_spec_metadata(source)
+    full_text, page_map = reconstruct_full_text(pages)
+    words = full_text.split()
+
+    if not words:
+        logger.warning("chunk_as_flat_tables: no words extracted from %s", source)
+        return []
+
+    step = chunk_size - overlap
+    chunks: list[dict[str, Any]] = []
+    start = 0
+
+    while start < len(words):
+        end = start + chunk_size
+        chunk_text = " ".join(words[start:end])
+        char_offset = len(" ".join(words[:start]))
+        page = _resolve_page_number(char_offset, page_map)
+
+        chunks.append(
+            _build_chunk(
+                text=chunk_text,
+                source=source,
+                page=page,
+                section="",
+                section_title="",
+                chunk_type="parameter",
+                chunk_index=len(chunks),
+                total_chunks=0,
+                is_summary=False,
+                depth=1,
+                chapter="",
+                parent_section="",
+                grandparent_section="",
+                spec_number=spec_meta.get("spec_number", ""),
+                series_id=spec_meta.get("series_id", ""),
+            )
+        )
+        start += step
+        if len(words) - start < min_remaining:
+            break
+
+    total = len(chunks)
+    for chunk in chunks:
+        chunk["total_chunks"] = total
+
+    logger.info(
+        "Flat table chunking %s: words=%s chunks=%s",
+        source, len(words), total,
+    )
+    return chunks
