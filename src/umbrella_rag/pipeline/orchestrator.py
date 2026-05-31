@@ -120,8 +120,13 @@ class RCAOrchestrator:
 
             source_filter = classify_query(expanded_query)
 
+            top_k_override = None
+            if source_filter == ["38133-i90.pdf"]:
+                top_k_override = 50
+
             retrieved_chunks = self._retriever.retrieve(
                 expanded_query,
+                top_k=top_k_override,
                 source_filter=source_filter,
             )
 
