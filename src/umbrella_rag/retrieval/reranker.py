@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Protocol
 
 from sentence_transformers import CrossEncoder
@@ -8,6 +9,8 @@ from sentence_transformers import CrossEncoder
 from ..config import Settings, load_settings
 from .retriever import RetrievedChunk
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RerankedChunk:
@@ -84,6 +87,17 @@ class CrossEncoderReranker:
         ]
 
         reranked.sort(key=lambda item: item.rerank_score, reverse=True)
+
+        RERANK_CONFIDENCE_THRESHOLD = -3.0
+        if reranked and reranked[0].rerank_score < RERANK_CONFIDENCE_THRESHOLD:
+            logger.warning(
+                "Low reranker confidence (top_score=%.2f, query=%r) — "
+                "falling back to similarity ordering",
+                reranked[0].rerank_score,
+                query[:80],
+            )
+            reranked.sort(key=lambda item: item.similarity, reverse=True)
+
         return reranked[:limit]
 
 
