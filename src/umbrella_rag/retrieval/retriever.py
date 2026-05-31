@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 
 from ..config import Settings, load_settings
 from ..db.pgvector_client import PgVectorClient, PgVectorPool
 from ..embeddings.encoder import EmbeddingProvider, SentenceTransformerEmbeddingProvider
+from ..types import ChunkDTO
 
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class RetrievedChunk:
-    id: int
-    text: str
-    source: str
-    page: int
-    section: str
-    section_title: str
-    chunk_type: str
-    spec_number: str
-    series_id: str
-    similarity: float
-    rerank_score: float | None = None
+RetrievedChunk = ChunkDTO
 
 
 class Retriever:
@@ -44,7 +32,7 @@ class Retriever:
         query: str,
         top_k: int | None = None,
         source_filter: list[str] | None = None,
-    ) -> list[RetrievedChunk]:
+    ) -> list[ChunkDTO]:
         if not query or not query.strip():
             raise ValueError("Query must be a non-empty string.")
 
@@ -58,7 +46,7 @@ class Retriever:
             return []
 
         results = [
-            RetrievedChunk(
+            ChunkDTO(
                 id=row["id"],
                 text=row.get("text", ""),
                 source=row.get("source", ""),

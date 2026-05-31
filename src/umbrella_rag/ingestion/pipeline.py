@@ -7,7 +7,7 @@ from ..config import Settings, load_settings
 from ..db.pgvector_client import PgVectorClient, PgVectorPool
 from ..embeddings.encoder import EmbeddingProvider, SentenceTransformerEmbeddingProvider
 from pathlib import Path
-from .chunker import chunk_as_flat_tables, chunk_pages, FLAT_TABLE_SOURCES
+from .chunker import chunk_as_flat_tables, chunk_pages
 from .parser import parse_pdf
 
 
@@ -83,9 +83,14 @@ def run_ingestion(
     logger.info("Parsed %s useful pages, skipped %s pages", len(pages), skipped)
 
     source_name = Path(pdf_path).name
-    if source_name in FLAT_TABLE_SOURCES:
+    if source_name in resolved.flat_table_sources:
         logger.info("Using flat table chunker for %s", source_name)
-        chunks = chunk_as_flat_tables(pages)
+        chunks = chunk_as_flat_tables(
+            pages,
+            chunk_size=resolved.flat_table_chunk_size,
+            overlap=resolved.flat_table_overlap,
+            min_remaining=resolved.flat_table_min_remaining,
+        )
     else:
         chunks = chunk_pages(
             pages,

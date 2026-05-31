@@ -713,9 +713,6 @@ def chunk_pages(
     return chunk_document(pages, chunk_size, overlap, min_remaining_words)
 
 
-FLAT_TABLE_SOURCES: frozenset[str] = frozenset({"38133-i90.pdf"})
-
-
 def chunk_as_flat_tables(
     pages: list[dict[str, Any]],
     chunk_size: int = 200,

@@ -7,40 +7,13 @@ from typing import Any, Callable
 
 from ..retrieval.classifier import classify_query
 from ..retrieval.expander import expand_query
+from ..types import ChunkDTO
 
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class RetrievedChunk:
-    """Structured chunk returned by the RCA orchestrator.
-
-    Attributes:
-        id: Primary key of the chunk record.
-        text: Chunk text content.
-        source: Source document filename.
-        page: Source page number.
-        section: Section identifier.
-        section_title: Human-readable section title.
-        chunk_type: Chunk classification label.
-        spec_number: 3GPP specification number.
-        series_id: 3GPP series identifier.
-        similarity: Dense retrieval similarity score.
-        rerank_score: Optional reranker score.
-    """
-
-    id: int
-    text: str
-    source: str
-    page: int
-    section: str
-    section_title: str
-    chunk_type: str
-    spec_number: str
-    series_id: str
-    similarity: float
-    rerank_score: float | None = None
+RetrievedChunk = ChunkDTO
 
 
 @dataclass(frozen=True)
@@ -61,7 +34,7 @@ class RCAResponse:
     query: str
     expanded_query: str
     answer: str
-    chunks: list[RetrievedChunk]
+    chunks: list[ChunkDTO]
     retrieval_count: int
     reranked_count: int
     model: str
@@ -144,7 +117,7 @@ class RCAOrchestrator:
             raise RuntimeError(f"RCA pipeline failed: {exc}") from exc
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
-        response_chunks = [_to_response_chunk(chunk) for chunk in reranked_chunks]
+        response_chunks = [_to_chunk_dto(chunk) for chunk in reranked_chunks]
         answer = getattr(generator_response, "answer", "")
         model = getattr(generator_response, "model", "")
 
@@ -213,7 +186,7 @@ def _safe_str(value: Any) -> str:
     return str(value)
 
 
-def _to_response_chunk(chunk: Any) -> RetrievedChunk:
+def _to_chunk_dto(chunk: Any) -> ChunkDTO:
     """Convert a retriever or reranker chunk into the orchestrator response shape.
 
     Args:
@@ -225,7 +198,7 @@ def _to_response_chunk(chunk: Any) -> RetrievedChunk:
     Notes:
         Missing metadata fields are normalized to empty strings.
     """
-    return RetrievedChunk(
+    return ChunkDTO(
         id=int(getattr(chunk, "id")),
         text=_safe_str(getattr(chunk, "text", "")),
         source=_safe_str(getattr(chunk, "source", "")),

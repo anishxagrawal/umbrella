@@ -1,39 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 from typing import Protocol
 
 from sentence_transformers import CrossEncoder
 
 from ..config import Settings, load_settings
-from .retriever import RetrievedChunk
+from ..types import ChunkDTO
 
 
 logger = logging.getLogger(__name__)
 
-@dataclass(frozen=True)
-class RerankedChunk:
-    id: int
-    text: str
-    source: str
-    page: int
-    section: str
-    section_title: str
-    chunk_type: str
-    spec_number: str
-    series_id: str
-    similarity: float
-    rerank_score: float
+RerankedChunk = ChunkDTO
 
 
 class Reranker(Protocol):
     def rerank(
         self,
         query: str,
-        chunks: list[RetrievedChunk],
+        chunks: list[ChunkDTO],
         top_k: int | None = None,
-    ) -> list[RerankedChunk]:
+    ) -> list[ChunkDTO]:
         raise NotImplementedError
 
 
@@ -42,6 +29,7 @@ class CrossEncoderReranker:
         self._model_name = model_name
         self._top_k_default = top_k_default
         self._model: CrossEncoder | None = None
+        self._confidence_threshold: float | None = None
 
     def _get_model(self) -> CrossEncoder:
         if self._model is None:
@@ -51,9 +39,9 @@ class CrossEncoderReranker:
     def rerank(
         self,
         query: str,
-        chunks: list[RetrievedChunk],
+        chunks: list[ChunkDTO],
         top_k: int | None = None,
-    ) -> list[RerankedChunk]:
+    ) -> list[ChunkDTO]:
         if not query or not query.strip():
             raise ValueError("Query must be a non-empty string.")
         if not chunks:
@@ -70,7 +58,7 @@ class CrossEncoderReranker:
             raise RuntimeError(f"Reranker failed: {exc}") from exc
 
         reranked = [
-            RerankedChunk(
+            ChunkDTO(
                 id=chunk.id,
                 text=chunk.text,
                 source=chunk.source,
@@ -88,8 +76,11 @@ class CrossEncoderReranker:
 
         reranked.sort(key=lambda item: item.rerank_score, reverse=True)
 
-        RERANK_CONFIDENCE_THRESHOLD = -3.0
-        if reranked and reranked[0].rerank_score < RERANK_CONFIDENCE_THRESHOLD:
+        if (
+            self._confidence_threshold is not None
+            and reranked
+            and reranked[0].rerank_score < self._confidence_threshold
+        ):
             logger.warning(
                 "Low reranker confidence (top_score=%.2f, query=%r) — "
                 "falling back to similarity ordering",
@@ -103,7 +94,9 @@ class CrossEncoderReranker:
 
 def build_reranker(settings: Settings | None = None) -> CrossEncoderReranker:
     resolved = settings or load_settings()
-    return CrossEncoderReranker(
+    reranker = CrossEncoderReranker(
         model_name=resolved.reranker_model_name,
         top_k_default=resolved.reranker_top_k,
     )
+    reranker._confidence_threshold = resolved.rerank_confidence_threshold
+    return reranker

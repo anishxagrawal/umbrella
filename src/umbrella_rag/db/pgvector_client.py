@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import logging
+import time
 from typing import Any, Iterator
 
 from pgvector.psycopg2 import register_vector
@@ -37,6 +38,8 @@ class PgVectorPool:
             user=settings.db_user,
             password=settings.db_password,
         )
+        self._retry_attempts = settings.db_retry_attempts
+        self._retry_backoff_seconds = settings.db_retry_backoff_seconds
 
     @contextmanager
     def connection(self) -> Iterator[psycopg2.extensions.connection]:
@@ -53,15 +56,28 @@ class PgVectorPool:
             Ensures the connection is returned to the pool.
         """
         conn = None
-        try:
-            conn = self._pool.getconn()
-            register_vector(conn)
-            yield conn
-        except Exception as exc:
-            raise RuntimeError(f"Database connection failed: {exc}") from exc
-        finally:
-            if conn is not None:
-                self._pool.putconn(conn)
+        last_exc: Exception | None = None
+        for attempt in range(1, self._retry_attempts + 1):
+            try:
+                conn = self._pool.getconn()
+                register_vector(conn)
+                yield conn
+                return
+            except Exception as exc:
+                last_exc = exc
+                if conn is not None:
+                    self._pool.putconn(conn)
+                    conn = None
+                if attempt >= self._retry_attempts:
+                    break
+                logger.warning(
+                    "Database connection attempt %s/%s failed: %s",
+                    attempt,
+                    self._retry_attempts,
+                    exc,
+                )
+                time.sleep(self._retry_backoff_seconds * attempt)
+        raise RuntimeError(f"Database connection failed: {last_exc}") from last_exc
 
     def close(self) -> None:
         """

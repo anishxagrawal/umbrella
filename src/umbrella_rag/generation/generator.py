@@ -7,7 +7,7 @@ from typing import Protocol
 from groq import Groq
 
 from ..config import Settings, load_settings
-from ..retrieval.reranker import RerankedChunk
+from ..types import ChunkDTO
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,7 @@ class Generator:
         self._provider = provider
         self._model_name = model_name
 
-    def generate(self, query: str, chunks: list[RerankedChunk]) -> RCAResponse:
+    def generate(self, query: str, chunks: list[ChunkDTO]) -> RCAResponse:
         if not query or not query.strip():
             return RCAResponse(
                 answer="Query must be a non-empty string.",
@@ -137,7 +137,7 @@ def build_generator(settings: Settings | None = None) -> Generator:
     return Generator(provider=provider, model_name=resolved.groq_model_name)
 
 
-def _build_prompt(query: str, chunks: list[RerankedChunk]) -> str:
+def _build_prompt(query: str, chunks: list[ChunkDTO]) -> str:
     lines = ["", "Context:"]
     for chunk in chunks:
         section_label = _format_section(chunk.section)
@@ -195,7 +195,7 @@ def _format_error_message(exc: Exception) -> str:
     return f"Groq API call failed: {message}"
 
 
-def _extract_sources(answer: str, chunks: list[RerankedChunk]) -> list[SourceReference]:
+def _extract_sources(answer: str, chunks: list[ChunkDTO]) -> list[SourceReference]:
     citations = _parse_citations(answer)
     if not citations:
         return []
@@ -236,7 +236,7 @@ def _parse_citations(answer: str) -> list[dict[str, object]]:
     return matches
 
 
-def _build_source_index(chunks: list[RerankedChunk]) -> dict[tuple[str, int, str | None], SourceReference]:
+def _build_source_index(chunks: list[ChunkDTO]) -> dict[tuple[str, int, str | None], SourceReference]:
     index: dict[tuple[str, int, str | None], SourceReference] = {}
     for chunk in chunks:
         key = _normalize_key(chunk.source, chunk.page, chunk.section)
